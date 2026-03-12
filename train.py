@@ -17,13 +17,92 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from kernels import get_kernel
-cap = torch.cuda.get_device_capability()
-# varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
-repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-fa3 = get_kernel(repo).flash_attn_interface
-
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
+
+
+def _load_flash_attention():
+    try:
+        from kernels import get_kernel
+
+        cap = torch.cuda.get_device_capability()
+        # varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
+        repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
+        return get_kernel(repo).flash_attn_interface, repo, None
+    except Exception as exc:
+        return None, None, exc
+
+
+fa3, fa3_repo, fa3_error = _load_flash_attention()
+if fa3 is None:
+    print(f"Warning: failed to load Flash Attention kernel ({fa3_error}). Falling back to PyTorch SDPA.")
+
+_attention_mask_cache = {}
+
+
+def _compile_supported():
+    if os.environ.get("AUTORESEARCH_DISABLE_COMPILE", "").lower() in {"1", "true", "yes", "on"}:
+        return False, "disabled by AUTORESEARCH_DISABLE_COMPILE"
+    try:
+        import triton  # noqa: F401
+    except Exception as exc:
+        return False, f"Triton unavailable ({exc})"
+    return True, None
+
+
+COMPILE_ENABLED, COMPILE_REASON = _compile_supported()
+if not COMPILE_ENABLED:
+    print(f"Warning: torch.compile disabled, using eager mode ({COMPILE_REASON}).")
+
+
+def maybe_compile(fn=None, **compile_kwargs):
+    def decorator(inner_fn):
+        if not COMPILE_ENABLED:
+            return inner_fn
+        return torch.compile(inner_fn, **compile_kwargs)
+
+    if fn is None:
+        return decorator
+    return decorator(fn)
+
+
+def env_int(name, default):
+    value = os.environ.get(name)
+    return int(value) if value is not None else default
+
+
+def env_str(name, default):
+    value = os.environ.get(name)
+    return value if value is not None else default
+
+
+def _get_local_attention_mask(seq_len, window, device):
+    key = (seq_len, window, str(device))
+    if key not in _attention_mask_cache:
+        positions = torch.arange(seq_len, device=device)
+        distance = positions[:, None] - positions[None, :]
+        _attention_mask_cache[key] = (distance >= 0) & (distance < window)
+    return _attention_mask_cache[key]
+
+
+def flash_attention(q, k, v, window_size):
+    if fa3 is not None:
+        return fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+    if q.size(1) != k.size(1):
+        repeat_factor = q.size(1) // k.size(1)
+        k = k.repeat_interleave(repeat_factor, dim=1)
+        v = v.repeat_interleave(repeat_factor, dim=1)
+
+    left_window = window_size[0] if isinstance(window_size, tuple) else window_size
+    if left_window >= q.size(-2):
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+    else:
+        mask = _get_local_attention_mask(q.size(-2), left_window, q.device)
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+    return y.transpose(1, 2)
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -90,7 +169,7 @@ class CausalSelfAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
 
-        y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        y = flash_attention(q, k, v, window_size)
         y = y.contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y
@@ -302,7 +381,7 @@ polar_express_coeffs = [
     (2.3465413258596377, -1.7097828382687081, 0.42323551169305323),
 ]
 
-@torch.compile(dynamic=False, fullgraph=True)
+@maybe_compile(dynamic=False, fullgraph=True)
 def adamw_step_fused(p, grad, exp_avg, exp_avg_sq, step_t, lr_t, beta1_t, beta2_t, eps_t, wd_t):
     p.mul_(1 - lr_t * wd_t)
     exp_avg.lerp_(grad, 1 - beta1_t)
@@ -313,7 +392,7 @@ def adamw_step_fused(p, grad, exp_avg, exp_avg_sq, step_t, lr_t, beta1_t, beta2_
     step_size = lr_t / bias1
     p.add_(exp_avg / denom, alpha=-step_size)
 
-@torch.compile(dynamic=False, fullgraph=True)
+@maybe_compile(dynamic=False, fullgraph=True)
 def muon_step_fused(stacked_grads, stacked_params, momentum_buffer, second_momentum_buffer,
                     momentum_t, lr_t, wd_t, beta2_t, ns_steps, red_dim):
     # Nesterov momentum
@@ -430,12 +509,12 @@ class MuonAdamW(torch.optim.Optimizer):
 # ---------------------------------------------------------------------------
 
 # Model architecture
-ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
-HEAD_DIM = 128          # target head dimension for attention
-WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
+ASPECT_RATIO = env_int("AUTORESEARCH_ASPECT_RATIO", 64)  # model_dim = depth * ASPECT_RATIO
+HEAD_DIM = env_int("AUTORESEARCH_HEAD_DIM", 128)         # target head dimension for attention
+WINDOW_PATTERN = env_str("AUTORESEARCH_WINDOW_PATTERN", "L")  # use full attention by default on smaller GPUs
 
 # Optimization
-TOTAL_BATCH_SIZE = 2**19 # ~524K tokens per optimizer step
+TOTAL_BATCH_SIZE = env_int("AUTORESEARCH_TOTAL_BATCH_SIZE", 2**14) # smaller default for consumer GPUs
 EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.04        # learning rate for matrix parameters (Muon)
@@ -447,8 +526,8 @@ WARMDOWN_RATIO = 0.5    # fraction of time budget for LR warmdown
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
-DEPTH = 8               # number of transformer layers
-DEVICE_BATCH_SIZE = 128  # per-device batch size (reduce if OOM)
+DEPTH = env_int("AUTORESEARCH_DEPTH", 4)                # smaller default for 12 GB class GPUs
+DEVICE_BATCH_SIZE = env_int("AUTORESEARCH_DEVICE_BATCH_SIZE", 4)  # per-device batch size
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
@@ -505,7 +584,8 @@ optimizer = model.setup_optimizer(
     weight_decay=WEIGHT_DECAY,
 )
 
-model = torch.compile(model, dynamic=False)
+if COMPILE_ENABLED:
+    model = torch.compile(model, dynamic=False)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
