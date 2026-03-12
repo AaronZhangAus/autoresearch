@@ -514,7 +514,7 @@ HEAD_DIM = env_int("AUTORESEARCH_HEAD_DIM", 128)         # target head dimension
 WINDOW_PATTERN = env_str("AUTORESEARCH_WINDOW_PATTERN", "L")  # use full attention by default on smaller GPUs
 
 # Optimization
-TOTAL_BATCH_SIZE = env_int("AUTORESEARCH_TOTAL_BATCH_SIZE", 2**14) # smaller default for consumer GPUs
+TOTAL_BATCH_SIZE = env_int("AUTORESEARCH_TOTAL_BATCH_SIZE", 2**15) # match batch size 16 at seq len 2048
 EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.04        # learning rate for matrix parameters (Muon)
@@ -526,8 +526,8 @@ WARMDOWN_RATIO = 0.5    # fraction of time budget for LR warmdown
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
-DEPTH = env_int("AUTORESEARCH_DEPTH", 4)                # smaller default for 12 GB class GPUs
-DEVICE_BATCH_SIZE = env_int("AUTORESEARCH_DEVICE_BATCH_SIZE", 8)  # per-device batch size
+DEPTH = env_int("AUTORESEARCH_DEPTH", 6)                # increased default after stable batch-size testing
+DEVICE_BATCH_SIZE = env_int("AUTORESEARCH_DEVICE_BATCH_SIZE", 16)  # per-device batch size
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
