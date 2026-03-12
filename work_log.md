@@ -1,0 +1,33 @@
+## 12/03/2026 WORK LOG
+I've managed to run train.py without errors.
+
+Here is the output:
+Warning: failed to load Flash Attention kernel (Cannot install kernel from repo kernels-community/flash-attn3 (revision: main)). Falling back to PyTorch SDPA.
+Warning: torch.compile disabled, using eager mode (Triton unavailable (No module named 'triton')).
+Vocab size: 8,192
+Model config: {'sequence_len': 2048, 'vocab_size': 8192, 'n_layer': 4, 'n_head': 2, 'n_kv_head': 2, 'n_embd': 256, 'window_pattern': 'L'}
+Parameter counts:
+  wte                     : 2,097,152
+  value_embeds            : 4,194,304
+  lm_head                 : 2,097,152
+  transformer_matrices    : 3,145,856
+  scalars                 : 8
+  total                   : 11,534,472
+Estimated FLOPs per token: 5.662387e+07
+Scaling AdamW LRs by 1/sqrt(256/768) = 1.732051
+Time budget: 300s
+Gradient accumulation steps: 2
+step 03481 (100.0%) | loss: 3.619899 | lrm: 0.00 | dt: 88ms | tok/sec: 185,705 | mfu: 1.1% | epoch: 1 | remaining: 0s      
+---
+val_bpb:          1.283759
+training_seconds: 300.0
+total_seconds:    349.7
+peak_vram_mb:     1626.6
+mfu_percent:      1.09
+total_tokens_M:   57.0
+num_steps:        3482
+num_params_M:     11.5
+depth:            4
+
+Next I will kick off the smoke-test, running for 5 minutes
+
