@@ -526,7 +526,7 @@ WARMDOWN_RATIO = 0.5    # fraction of time budget for LR warmdown
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
-DEPTH = env_int("AUTORESEARCH_DEPTH", 8)                # test higher capacity while current batch config still has VRAM headroom
+DEPTH = env_int("AUTORESEARCH_DEPTH", 6)                # increased default after stable batch-size testing
 DEVICE_BATCH_SIZE = env_int("AUTORESEARCH_DEVICE_BATCH_SIZE", 16)  # per-device batch size
 
 # ---------------------------------------------------------------------------
