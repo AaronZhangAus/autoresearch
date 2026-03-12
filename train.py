@@ -515,7 +515,7 @@ WINDOW_PATTERN = env_str("AUTORESEARCH_WINDOW_PATTERN", "L")  # use full attenti
 
 # Optimization
 TOTAL_BATCH_SIZE = env_int("AUTORESEARCH_TOTAL_BATCH_SIZE", 2**15) # match batch size 16 at seq len 2048
-EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
+EMBEDDING_LR = 0.5      # test slightly gentler embedding updates from the current best baseline
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.03        # slightly lower Muon LR for the larger depth-6 baseline
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
