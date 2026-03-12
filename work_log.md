@@ -30,4 +30,24 @@ num_params_M:     11.5
 depth:            4
 
 Next I will kick off the smoke-test, running for 5 minutes
+log:
+
+
+  scalars                 : 8
+  total                   : 11,534,472
+Estimated FLOPs per token: 5.662387e+07
+Scaling AdamW LRs by 1/sqrt(256/768) = 1.732051
+Time budget: 300s
+Gradient accumulation steps: 2
+step 03457 (100.0%) | loss: 3.568453 | lrm: 0.00 | dt: 90ms | tok/sec: 181,595 | mfu: 1.0% | epoch: 1 | remaining: 0s      
+---
+val_bpb:          1.287775
+training_seconds: 300.0
+total_seconds:    351.6
+peak_vram_mb:     1626.6
+mfu_percent:      1.08
+total_tokens_M:   56.7
+num_steps:        3458
+num_params_M:     11.5
+depth:            4
 
