@@ -510,7 +510,7 @@ class MuonAdamW(torch.optim.Optimizer):
 
 # Model architecture
 ASPECT_RATIO = env_int("AUTORESEARCH_ASPECT_RATIO", 64)  # model_dim = depth * ASPECT_RATIO
-HEAD_DIM = env_int("AUTORESEARCH_HEAD_DIM", 64)          # try more attention heads at similar overall model width
+HEAD_DIM = env_int("AUTORESEARCH_HEAD_DIM", 128)         # target head dimension for attention
 WINDOW_PATTERN = env_str("AUTORESEARCH_WINDOW_PATTERN", "L")  # use full attention by default on smaller GPUs
 
 # Optimization
