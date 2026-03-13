@@ -74,3 +74,20 @@ num_steps:        3458
 num_params_M:     11.5
 depth:            4
 ```
+Best training result after a few fine-tuning runs.
+
+#### Full Log
+
+```text
+step 01096 (100.0%) | loss: 3.387372 | lrm: 0.00 | dt: 278ms | tok/sec: 117,709 | mfu: 1.7% | epoch: 1 | remaining: 0s     
+---
+val_bpb:          1.205011
+training_seconds: 300.2
+total_seconds:    374.0
+peak_vram_mb:     8380.6
+mfu_percent:      1.67
+total_tokens_M:   35.9
+num_steps:        1097
+num_params_M:     26.3
+depth:            6
+```
