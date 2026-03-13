@@ -18,6 +18,10 @@ AGENTS.md
 
 # Experimental code/artifacts
 dev/
+run.log
 
 # Results file
 results.tsv
+
+# Local editor metadata
+.idea/
